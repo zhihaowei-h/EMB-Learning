@@ -40,7 +40,7 @@ int main() {
     // 4. 模拟程序正在做其他极其耗时的任务
     while (1) {
         printf(".");
-        fflush(stdout); // FIXME刷新输出缓冲区 
+        fflush(stdout); // FIXME刷新输出缓冲区
         sleep(1);       // 假装在忙碌计算
         // 在这个过程中，如果你在键盘输入内容并按回车，内核会检测到标准输入有数据可读，然后向我们发送 SIGIO 信号，触发 sigio_handler 函数的执行，在那里我们就能读取并打印出你输入的内容了
     }

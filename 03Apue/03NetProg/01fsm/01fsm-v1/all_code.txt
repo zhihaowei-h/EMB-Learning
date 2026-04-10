@@ -1,0 +1,209 @@
+==> fsm.c <==
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#include "fsm.h"
+
+int fsm_init(fsm_t **f, int rfd, int wfd)
+{
+	fsm_t *me = NULL;//指向开辟的空间
+	int saver = 0, savew = 0;//分别存储读文件的文件状态和写文件的文件状态
+
+	me = malloc(sizeof(fsm_t));//开辟状态机结构的空间
+	if(me == NULL)//判断开辟状态机结构的空间是否失败
+		return -1;//由于开辟状态机结构的空间失败,结束函数,并且返回-1
+
+	me->rfd = rfd;//把客户传递的读文件的文件描述符进行存储
+	me->wfd = wfd;//把客户传递的写文件的文件描述符进行存储
+	memset(me->buf, 0, BUFSIZE);//清空状态机结构的buf空间
+	me->count = 0;//把成功读取到的字节数清0
+	me->pos = 0;//把已写入的字节数清0
+	me->state = STATE_R;//初始化默认状态为读的状态
+	me->errmsg = NULL;//初始化出错函数的函数名指针为NULL
+	
+	saver = fcntl(me->rfd, F_GETFL);//获取读文件的文件状态
+	fcntl(me->rfd, F_SETFL, saver | O_NONBLOCK);//在读文件原有的状态上加入非阻塞
+	
+	savew = fcntl(me->wfd, F_GETFL);//获取写文件的文件状态
+	fcntl(me->wfd, F_SETFL, savew | O_NONBLOCK);//在写文件原有的状态上加入非阻塞
+
+	*f = me;//把成功开辟状态机结构的空间回填
+
+	return 0;
+}
+
+int fsm_drive(fsm_t *f)
+{
+	int ret = 0;//存储本次写入数据的字节数
+
+	switch(f->state)//通过switch语句推导有限状态机
+	{
+		case STATE_R : 
+			f->count = read(f->rfd, f->buf, BUFSIZE);//从rfd文件中读取数据
+			if(f->count == -1)//判断read(2)调用是否失败
+			{
+				if(errno != EAGAIN)//判断是否不是假错
+				{
+					f->errmsg = "read()";//记录出错函数的函数名
+					f->state = STATE_E;//切换到E状态
+				}
+			}
+			else if(f->count == 0)//判断是否读到了EOF
+				f->state = STATE_T;//切换到T状态
+			else//读取成功
+			{
+				f->pos = 0;//再切换到W状态之前,先把pos清0
+				f->state = STATE_W;//切换到W状态
+			}
+			break;
+		case STATE_W : 
+			ret = write(f->wfd, f->buf + f->pos, f->count);//把buf存储的数据写入到wfd中
+			if(ret == -1)//判断写入数据是否失败
+			{
+				f->errmsg = "write()";//记录出错函数的函数名
+				f->state = STATE_E;//切换到E状态
+			}
+			else
+			{
+				if(ret < f->count)//判断是否没有写完
+				{
+					f->pos += ret;//记录已经写入的字节数
+					f->count -= ret;//减去已写入的字节数
+				}
+				else
+				{
+					f->state = STATE_R;//切换到R状态
+				}
+			}
+			break;
+		case STATE_E : 
+			perror(f->errmsg);//打印错误信息
+			f->state = STATE_T;//切换到T状态
+			break;
+		case STATE_T : //当前T状态什么都不做(不能直接结束进程)
+			break;
+		default : break;
+	}
+
+	return 0;
+}
+
+int fsm_destroy(fsm_t *f)
+{
+	free(f);//释放有限状态机的结构
+	f = NULL;//避免出现野指针
+
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+==> main.c <==
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include "fsm.h"
+
+#define TTY1	"/dev/tty9"
+#define TTY2	"/dev/tty10"
+
+int main(void)
+{
+	fsm_t *fsm12 = NULL;//指向r9w10的有限状态机
+	fsm_t *fsm21 = NULL;//指向r10w9的有限状态机
+	int fd1, fd2;//存储打开文件的文件描述符
+
+	fd1 = open(TTY1, O_RDWR);//打开/dev/tty9设备(打开时没有加入非阻塞选项)
+	if(fd1 == -1)//判断打开/dev/tty9设备是否失败
+	{
+		perror("open()");//打印错误信息
+		return -1;//由于打开/dev/tty9设备失败,结束程序,并且返回-1
+	}
+	write(fd1, "[****tty9****]", 14);//用来区分是/dev/tty9设备
+
+	fd2 = open(TTY2, O_RDWR | O_NONBLOCK);//打开/dev/tty10设备(打开时加入非阻塞选项)
+	if(fd2 == -1)//判断打开/dev/tty10设备是否失败
+	{
+		perror("open()");//打印错误信息
+		close(fd1);//关闭/dev/tty9设备
+		return -2;//由于打开/dev/tty10设备失败,结束程序,并且返回-2
+	}
+	write(fd2, "[!!!tty10!!!]", 13);//用来区分是/dev/tty10设备
+
+	fsm_init(&fsm12, fd1, fd2);//初始化r9w10的有限状态机
+	fsm_init(&fsm21, fd2, fd1);//初始化r10w9的有限状态机
+
+	//推动有限状态机的运行
+	while(fsm12->state != STATE_T && fsm21->state != STATE_T)
+	{
+		fsm_drive(fsm12);//推动r9w10的有限状态机
+		fsm_drive(fsm21);//推动r10w9的有限状态机
+	}
+
+	fsm_destroy(fsm12);//释放r9w10的有限状态机
+	fsm_destroy(fsm21);//释放r10w9的有限状态机
+
+	close(fd2);//关闭/dev/tty10设备文件
+	close(fd1);//关闭/dev/tty9设备文件
+
+	return 0;
+}
+
+
+==> fsm.h <==
+#pragma once
+
+// 状态机的4种状态(未来状态机就是不断地在这4种状态之间切换)
+enum {
+    STATE_R = 0, // 读状态
+    STATE_W,     // 写状态 
+    STATE_E,     // 异常状态 
+    STATE_T,     // 终止状态 
+};
+
+#define BUFSIZE 1024
+
+// 有限状态机结构体(数据搬运工的"工作档案")
+typedef struct {
+    int rfd;       // 货源地：从哪个文件/设备里往外掏数据(Read FD)
+    int wfd;       // 目的地：要把数据塞进哪个文件/设备(Write FD)
+    
+    char buf[BUFSIZE]; // 搬运小推车：一块用来暂存数据的内存空间
+    
+    int count;     // 车上装了多少货：这一趟总共成功"读"到了多少个字节
+    int pos;       // 卸了多少货：这一趟已经成功"写"进去了多少个字节
+                   // （注：在非阻塞模式下，货可能一次卸不完。用 count 减去 pos，就知道推车里还剩多少货没卸）
+                   
+    int state;     // 当前档位：搬运工现在处于什么状态？
+                   // (是在专心装货 STATE_R，还是在努力卸货 STATE_W，或者是出了事故 STATE_E，还是已经下班 STATE_T）
+                   
+    char *errmsg;  // 事故记录本：如果发生了真正的系统级错误（非假错），记录是哪个动作（如 "read()"）引发的故障
+} fsm_t;
+
+
+// 初始化状态机
+int fsm_init(fsm_t **f, int rfd, int wfd); // 要修改指向状态机的一级指针的值(要为状态机开辟空间，也就是让指向状态机的一级指针指向该开辟的空间)，所以要传一个二级指针
+
+// 驱动状态机
+void fsm_drive(fsm_t *f);
+
+// 销毁状态机
+int fsm_destroy(fsm_t *f);
+==> README.md <==
+简单的状态机的应用

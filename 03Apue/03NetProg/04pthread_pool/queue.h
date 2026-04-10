@@ -31,7 +31,7 @@ int queue_is_empty(const queue_t *q);
 参数 : q 指向要判断的队列
 返回值 : 为满返回1,不为满返回0
 */
-int queue_is_full(const queue _t *q);
+int queue_is_full(const queue_t *q);
 
 /*
 功能 : 入队
