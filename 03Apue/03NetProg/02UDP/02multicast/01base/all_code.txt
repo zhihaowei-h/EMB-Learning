@@ -1,0 +1,141 @@
+==> client.c <==
+// 接收端
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include "protocol.h"
+#include <net/if.h>
+/* 
+[1] 创建套接字
+[2] 绑定地址和端口
+[3] 加入多播组
+[4] 接收多播组中的消息
+[5] 关闭套接字
+*/
+int main(int argc, char *argv[]){
+    struct ip_mreqn mreq;          // 定义一个ip_mreqn结构体变量mreq，存储多播组的相关信息
+    struct sockaddr_in local_addr; // 定义一个sockaddr_in结构体变量local_addr，存储本地地址信息
+    // [1] 创建套接字
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sockfd == -1){
+        perror("socket()");
+        return -1;
+    }
+
+    // [2] 绑定地址和端口
+    local_addr.sin_family = AF_INET;          // 将local_addr结构体变量的sin_family成员设置为AF_INET，表示使用IPv4协议
+    inet_aton(LOCAL_IP, &local_addr.sin_addr);// 将本地IP地址转换为二进制格式，并赋值给local_addr的sin_addr成员
+    local_addr.sin_port = htons(RECV_PORT);   // 将端口号转换为网络字节序，并赋值给local_addr的sin_port成员
+    // 使用bind函数将套接字sockfd绑定到指定的地址和端口，参数包括套接字描述符sockfd，指向地址结构的指针(local_addr)，以及地址结构的大小
+    if(bind(sockfd, (struct sockaddr *)&local_addr, sizeof(local_addr)) == -1){
+        perror("bind()");
+        return -1;
+    }
+
+    // [3] 加入多播组
+    inet_aton(MULTICAST_IP, &mreq.imr_multiaddr);    // 将本地字节序的多播组IP地址转换为网络字节序的二进制格式，并赋值给mreq的imr_multiaddr成员
+    inet_aton(LOCAL_IP, &mreq.imr_address);          // 将本地IP地址转换为二进制格式，并赋值给mreq的imr_address成员
+    mreq.imr_ifindex = if_nametoindex(NETCARD_NAME); // 获取网卡索引，并赋值给mreq的imr_ifindex成员
+    // NOTE: 告诉套接字，未来从MULTICAST_IP这个地址接收的数据包，都从NETCARD_NAME这个网卡进来
+    // 使用setsockopt函数设置套接字选项，参数包括套接字描述符sockfd，协议级别IPPROTO_IP，选项名称IP_ADD_MEMBERSHIP，选项值为mreq结构体变量的地址，以及选项值的大小
+    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == -1){
+        perror("setsockopt()");
+        return -1;
+    }
+
+    // [4] 接收多播组中的消息
+    char ptr[128] = {0};
+    while(1){
+        ssize_t recvlen = recvfrom(sockfd, &ptr, sizeof(ptr), 0, NULL, NULL); // 由于接收的是多播组的消息，所以不关心发送者的地址信息，因此将recvfrom函数的最后两个参数设置为NULL
+        if(recvlen == -1){
+            perror("recvfrom()");
+            return -1;
+        }
+        printf("msg = %s\n", ptr);
+    }
+
+    // [5] 关闭套接字
+    close(sockfd);
+
+    return 0;
+}
+==> server.c <==
+// 发送端
+#include "protocol.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <net/if.h>
+
+int main(int argc, char *argv[]){
+    struct ip_mreqn mreq;
+    struct sockaddr_in group_addr;// 定义一个sockaddr_in结构体变量group_addr，存储多播组的地址信息
+    
+    // [1] 创建套接字
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);  
+    if(sockfd == -1){
+        perror("socket()"); // 213
+        return -1;
+    }
+
+    // 发送端不需要绑定地址和端口，系统会自动分配一个临时的端口号
+    
+    // [2] 将套接字使能为"组播就绪"状态
+    inet_aton(MULTICAST_IP, &mreq.imr_multiaddr);   // 将多播组IP地址转换为二进制格式，并赋值给mreq的imr_multiaddr成员
+    inet_aton(LOCAL_IP, &mreq.imr_address);         // 将本地IP地址转换为二进制格式，并赋值给mreq的imr_address成员
+    mreq.imr_ifindex = if_nametoindex(NETCARD_NAME);// 获取网卡索引，并赋值给mreq的imr_ifindex成员
+    if(setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) == -1){
+        perror("setsockopt()");
+        return -1;
+    }
+
+    // [3] 往多播组中发送消息
+    group_addr.sin_family = AF_INET;               // 将group_addr结构体变量的sin_family成员设置为AF_INET，表示使用IPv4协议
+    inet_aton(MULTICAST_IP, &group_addr.sin_addr); // 将多播组IP地址转换为二进制格式，并赋值给group_addr的sin_addr成员
+    group_addr.sin_port = htons(RECV_PORT);        // 将接收端的端口号转换为网络字节序，并赋值给group_addr的sin_port成员
+    while(1){
+        sendto(sockfd, "hello", 5, 0, (struct sockaddr *)&group_addr, sizeof(group_addr));
+        sleep(1);
+    }
+
+    // [4] 关闭套接字
+    close(sockfd);
+     
+    return 0;
+}
+==> protocol.h <==
+# pragma once
+
+#include <stdint.h>
+#define MSGSIZE 128
+
+// [1] 需要一个多播组的地址(224.0.0.0 ~ 239.255.255.255都可以)
+#define MULTICAST_IP "234.2.3.4"
+// [2] 在创建多播组的时候，需要本地的IP地址(写"0.0.0.0"的好处是将来换主机照样可以使用)
+#define LOCAL_IP "0.0.0.0"
+// [3] 可以通过ifconfig命令查询当前系统的网卡名称
+#define NETCARD_NAME "ens33"
+// [4] 接收端的端口
+#define RECV_PORT 9527
+
+
+struct data_st{
+    int8_t id;
+    char msg[MSGSIZE];
+}__attribute__((packed));  // FIXME:单字节对齐

@@ -1,0 +1,102 @@
+==> 01exec.c <==
+#include <stdio.h>
+#include <unistd.h>
+
+int main(void){
+    printf("Begin...\n");// 打印开始
+ 
+    execl("/usr/bin/ls", "ls", "-l", NULL); // 使用execl函数替换当前进程为ls命令的进程，并传递参数-l
+    
+    printf("End...\n");// 打印结束
+    
+    return 0;
+}
+==> 02exec.c <==
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+int main(void){
+    pid_t pid; //存储子进程的标识
+    char *str[] = {"ls", "-l", NULL}; // 把选项参数列表合到了一起
+
+    printf("Begin...\n");
+    
+    pid = fork();//创建子进程
+    // 如果 创建子进程失败
+    if(pid < 0){
+        perror("fork()");
+        exit(1); // 由于创建子进程失败,终止进程,并且返回状态1
+    }
+    
+    // 子进程的操作
+    if(pid == 0){
+        // execl("/usr/bin/ls", "ls", "-l", NULL);//使用 "ls -l" 替换子进程
+        // execlp("ls", "ls", "-l", NULL);
+        // execle("/usr/bin/ls", "ls", "-l", NULL, NULL);
+        // execv("/usr/bin/ls", str); // 这5个都是等价的
+        execvp("ls", str); // 这3个都是等价的
+        perror("exec()"); // 如果exec函数返回，说明替换失败，输出错误信息
+        exit(2); // 由于进程替换失败，终止子进程进程，并且返回状态2
+    }
+    
+    wait(NULL);// 等待子进程退出
+    printf("End...\n");
+    
+    return 0;
+}
+
+==> 03exec_demo_caller.c <==
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    printf("【调用者】准备发射，启动可执行文件[./target] ...\n");
+
+    // 注意这里：
+    // 第1个参数 "./target" 是硬盘上的真实文件路径
+    // 第2个参数 "hello" 是我们赋予它的虚假名字 (传给目标程序的 argv[0])
+    
+    execl("./target", "hello", (char *)NULL);
+
+    // 如果 exec 成功，下面的代码不会执行
+    perror("exec 失败");
+    return 1;
+}
+==> 04exec_demo_target.c <==
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char *argv[]) {
+    printf("--- 进入 target 程序 ---\n");
+    printf("我看到的我的名字 (argv[0]) 是: [%s]\n", argv[0]);
+
+    // 根据不同的名字，表现出不同的“性格”
+    if (strcmp(argv[0], "hello") == 0) {
+        printf("=> 既然你叫我 hello，那我就执行【打招呼】功能：Hello, World!\n");
+    } 
+    else if (strcmp(argv[0], "bye") == 0) {
+        printf("=> 既然你叫我 bye，那我就执行【告别】功能：Goodbye!\n");
+    } 
+    else {
+        printf("=> 名字不认识，我什么都不做，直接退出。\n");
+    }
+
+    return 0;
+}
+==> README.md <==
+# 学习目标
+[1]掌握exec(2)一族函数的功能
+[2]知道execl(2)一族函数的使用以及命名规则
+[3]熟悉进程替换前后的变化，就是替换后的进程会继承被替换的进程的哪些东西，以及不继承哪些东西
+
+# 01exec.c & 02exec.c
+**功能描述**: 演示了一下exec的功能、使用以及命名规则
+**完成情况**: √
+
+# 03exec_demo_caller.c & 04exec_demo_target.c
+演示
+**功能描述**: 
+**完成情况**: √

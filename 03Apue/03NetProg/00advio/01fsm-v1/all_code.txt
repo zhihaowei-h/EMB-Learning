@@ -1,0 +1,236 @@
+==> fsm.c <==
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include "fsm.h"
+
+// 状态机初始化函数，设置读写文件描述符和初始状态
+int fsm_init(fsm_t **f, int rfd, int wfd) {
+    fsm_t *me = malloc(sizeof(fsm_t)); // 指向开辟的空间
+    // 如果给状态机分配内存失败
+    if (me == NULL) return -1;
+
+    me->rfd = rfd; // 读文件描述符
+    me->wfd = wfd; // 写文件描述符
+    memset(me->buf, 0, BUFSIZE); // 初始化BUFFER空间
+    me->state = STATE_R; // 初始状态为读状态  
+    me->count = 0;       // 把成功读取的字节数清0
+    me->pos = 0;         // 把成功写入的字节个数清0
+    me->errmsg = NULL;   // 错误信息初始化为NULL
+
+    // 关键：强制设置为非阻塞模式
+    int r_flags = fcntl(rfd, F_GETFL); // 获取文件描述符rfd打开文件的文件状态标志
+    r_flags |= O_NONBLOCK; // 加上非阻塞标志
+    fcntl(rfd, F_SETFL, r_flags); // 设置读文件描述符为非阻塞模式
+    
+    int w_flags = fcntl(wfd, F_GETFL); // 获取文件描述符wfd打开文件的文件状态标志
+    w_flags |= O_NONBLOCK; // 加上非阻塞标志
+    fcntl(wfd, F_SETFL, w_flags); // 设置写文件描述符为非阻塞模式
+
+    *f = me; // 把开辟的空间地址回填给参数f
+
+    return 0;
+}
+
+// 状态机驱动函数，根据当前状态执行相应的操作
+void fsm_drive(fsm_t *f) {
+    ssize_t n;
+
+    // 根据状态机当前的状态执行相应的操作
+    switch (f->state) {
+        case STATE_R: // 读状态：尝试从rfd读取数据到buf中
+            f->count = read(f->rfd, f->buf, BUFSIZE);
+            if (f->count > 0) {
+                f->pos = 0; // 续写位置重置为0
+                f->state = STATE_W;
+            } else if (f->count == 0) { // FIXME如果读到EOF，说明读完了，任务结束
+                f->state = STATE_T;
+            } else if(f->count == -1) {
+                // 如果 不是假错
+                if (errno != EAGAIN) {
+                    f->errmsg = "read()"; // 记录出错函数的函数名
+                    f->state = STATE_E;
+                }
+                // 如果是EAGAIN，状态保持STATE_R，下次drive继续读
+            }
+            break;
+
+        case STATE_W: // FIXME写状态：尝试从buf中写数据到wfd
+            // 续写逻辑：从 pos 位置开始写，剩余长度为 count - pos
+            int ret = write(f->wfd, f->buf + f->pos, f->count - f->pos);
+            if (ret == -1) {
+                if (errno != EAGAIN) {
+                    f->errmsg = "write()";
+                    f->state = STATE_E;
+                }
+            } else {
+                if (ret < f->count) {
+                    f->pos += ret; // 更新续写位置
+                    f->count -= ret; // 更新剩余长度
+                }else{
+                    f->state = STATE_R; // 全部写完，回到读状态
+                }
+                // 如果是EAGAIN，状态保持STATE_W，下次drive继续续写
+            }
+            break;
+
+        case STATE_E:
+            perror(f->errmsg);
+            f->state = STATE_T;
+            break;
+
+        case STATE_T:
+            // 终止态，不做事，等待销毁
+            break;
+        default:
+            // 不可能到达这里
+            break;
+    }
+    return;
+}
+
+// 状态机销毁函数，释放状态机占用的资源
+int fsm_destroy(fsm_t *f) {
+    if (f != NULL) free(f);
+    f = NULL; // 避免野指针
+    return 0;
+}
+==> main.c <==
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include "fsm.h"
+#define TTY1 "/dev/tty9"
+#define TTY2 "/dev/tty10"
+
+// 辅助函数：求两个数的最大值
+int max(int a, int b) {
+    return a > b ? a : b;
+}
+
+int main() {
+    int fd1, fd2;
+    fsm_t *fsm12 = NULL; // 指向状态机实例的一级指针：该状态机实例负责单向驱动 "读取 tty9 并写入 tty10" 的数据流转
+    fsm_t *fsm21 = NULL; // 指向状态机实例的一级指针：该状态机实例负责单向驱动 "读取 tty10 并写入 tty9" 的数据流转
+
+    fd1 = open(TTY1, O_RDWR | O_NONBLOCK); // 打开文件/dev/tty9，返回指向该文件的描述符，通过该文件描述符可读可写该文件，且非阻塞
+    // 如果 打开文件tty9失败
+    if (fd1 == -1) {
+        perror("open tty9");
+        exit(1);
+    }
+
+    write(fd1, "[****tty9****]", 14); // 通过文件描述符fd1往tty9写点东西，方便测试
+
+    fd2 = open(TTY2, O_RDWR | O_NONBLOCK);
+    // 如果 打开文件tty10失败
+    if (fd2 == -1) { 
+        perror("open tty10");
+        close(fd1);
+        exit(1);
+    }
+
+    write(fd2, "[****tty10****]", 15); // 通过文件描述符fd2往tty10写点东西，方便测试
+
+    fsm_init(&fsm12, fd1, fd2); // 初始化fsm12状态机
+    fsm_init(&fsm21, fd2, fd1); // 初始化fsm21状态机
+
+    // 引擎循环：如果这两个状态机不是都处于终止状态，就持续驱动
+    while (fsm12->state != STATE_T && fsm21->state != STATE_T) {
+        fsm_drive(fsm12);
+        fsm_drive(fsm21);
+    }
+
+    // 清理资源：销毁状态机，关闭文件描述符
+    fsm_destroy(fsm12);
+    fsm_destroy(fsm21);
+    close(fd1);
+    close(fd2);
+
+    return 0;
+}
+==> fsm.h <==
+#pragma once
+
+#define BUFSIZE 1024 // 定义BUFFER空间大小
+
+// 定义状态机的状态列表
+enum {
+    STATE_R = 0, // 读状态
+    STATE_W,     // 写状态
+    STATE_E,     // 异常状态
+    STATE_T      // 终止状态
+};
+
+// 有限状态机的结构体
+typedef struct{
+    int rfd;           // 读文件描述符
+    int wfd;           // 写文件描述符
+    char buf[BUFSIZE]; // BUFFER空间
+    int count;         // 已读取的字节个数
+    int pos;           // 已写入的字节个数
+    int state;         // 有限状态机当前的状态
+    char *errmsg;      // 出错函数的函数名
+} fsm_t;
+
+// 定义接口
+
+/**
+ * @brief 
+ * 初始化有限状态机
+ * @param
+ * f: 待初始化的有限状态机
+ * rfd: 读文件描述符
+ * wfd: 写文件描述符
+ * @return
+ * 成功返回0，失败返回<0
+ * 
+ * 要做两件事: 
+ * [1]给有限状态机开辟空间
+ * [2]初始化有限状态机的成员变量
+ * 
+ * 注意: 如何保证客户传递过来的rfd、wfd是非阻塞的: 可以使用fcntl(2)先获取原有的文件状态标志，然后在原有的基础上添加O_NONBLOCK标志，最后再把新的文件状态标志设置回去。
+ */
+extern int fsm_init(fsm_t **f, int rfd, int wfd);
+
+/**
+ * @brief 
+ * 驱动有限状态机
+ * @param
+ * f: 待驱动的有限状态机
+ * 
+ */
+extern void fsm_drive(fsm_t *f);
+
+/**
+ * @brief 
+ * 功能: 销毁有限状态机
+ * @param
+ * f: 待销毁的有限状态机
+ * @return
+ * 成功返回0，失败返回<0
+ * 
+ * 判断有限状态机的状态
+ * [R] 把rfd文件的数据读到有限状态机的BUFFER空间中，更新count成员变量，切换状态为W
+ *      > 0 成功读取到数据，更新count成员变量，切换状态为W
+ *      = 0 EOF 读到文件末尾，切换状态为[W]
+ *      < 0 读错误，判断是不是假错误，如果是EAGAIN错误，重读，推到状态为R，如果不是EAGAIN错误，更新errmsg成员变量指向出错函数的函数名，切换状态为E
+ * [W] 把有限状态机的BUFFER空间中的数据写到wfd文件中(判断是否要写入的数据都写入了，如果没有写完，就续写)
+ * [E] 输出errmsg成员变量指向的出错函数的函数名，切换状态为T
+ * [T] 销毁有限状态机
+ */
+extern void fsm_drive(fsm_t *f);
+
+/**
+ * @brief 
+ * 销毁有限状态机
+ * @param
+ * f: 待销毁的有限状态机
+ * @return
+ * 成功返回0，失败返回<0
+ */
+extern int fsm_destroy(fsm_t *f);
