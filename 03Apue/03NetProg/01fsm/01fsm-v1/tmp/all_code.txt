@@ -1,3 +1,4 @@
+==> fsm.c <==
 #include "fsm.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,10 +62,8 @@ int fsm_drive(fsm_t *fsm){
             ret = write(fsm->wfd, fsm->buf + fsm->pos, fsm->count);
             // rfd的文件流被关闭了，也就是不让往rfd的缓冲区中写入数据了
             if(ret == -1){
-                if(errno != errno){
-                    perror("write()");
-                    fsm->state = STATE_E;
-                }
+                perror("write()");
+                fsm->state = STATE_E;
             }else if(ret < fsm->count){    // 如果没有写完
                 fsm->pos += ret;
                 fsm->count -= ret;
@@ -89,3 +88,85 @@ int fsm_destory(fsm_t *fsm){
     fsm = NULL;
     return 0;
 }
+==> main.c <==
+#include <stdio.h>
+#include "fsm.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(){
+    fsm_t *t9tot10 = NULL;
+    fsm_t *t10tot9 = NULL;
+
+    int fd9 = open("/dev/tty9", O_RDWR);
+    if(fd9 == -1){
+        perror("open()");
+        return -1;
+    }
+    int fd10 = open("/dev/tty10", O_RDWR);
+    if(fd10 == -1){
+        perror("open()");
+        close(fd9);
+        return -2;
+    }
+
+    // 初始化
+    fsm_init(&t9tot10, fd9, fd10);
+    fsm_init(&t10tot9, fd10, fd9);
+	write(fd9, "[****tty9****]", 14); // 先往tty9的页缓存中写入一些数据
+	write(fd10, "[!!!tty10!!!]", 13); // 先往tty10的页缓存中写入一些数据
+
+
+    while(t10tot9->state != STATE_T && t9tot10->state != STATE_T)
+	{
+		fsm_drive(t10tot9);//推动r9w10的有限状态机
+		fsm_drive(t9tot10);//推动r10w9的有限状态机
+	}
+
+    // 
+    fsm_destory(t10tot9);
+    fsm_destory(t9tot10);
+
+    return 0;
+}
+==> fsm.h <==
+#pragma once
+
+// 状态机的4种状态
+enum {
+    STATE_R = 0,
+    STATE_W,
+    STATE_E,
+    STATE_T
+};
+
+#define BUFSIZE 128
+
+// 状态机-结构体(想象成搬运工)
+typedef struct{
+    int rfd; // 货源地(要从哪儿搬)
+    int wfd; // 目的地(货物的目的地)
+    char buf[BUFSIZE]; // 搬运车
+    int count; // 从货源地往搬运车上搬了多少(搬运车有多少)
+    int pos; // 从搬运车往目的地搬了多少
+    int state; 
+    /*
+    搬运工此时的状态
+    STATE_R: 正在从货源地往搬运车上搬
+    STATE_W: 正在从搬运车往目的地搬
+    STATE_E: 搬运工出了事故
+    STATE_T: 搬运工死了
+    */ 
+    char *msgerr; // 事故记录本
+}fsm_t;
+
+// 初始化有限状态机
+int fsm_init(fsm_t **fsm, int rfd, int wfd); // 因为我要动态给状态机开辟空间，就是要修改状态机的地址，所以要传状态机的二级指针
+
+// 驱动有限状态机
+int fsm_drive(fsm_t *fsm); // 驱动状态机的过程中会对状态机本身修改，所以传其一级地址
+
+// 销毁有限状态机
+int fsm_destory(fsm_t *fsm); // 

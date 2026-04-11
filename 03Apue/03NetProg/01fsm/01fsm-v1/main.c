@@ -35,7 +35,7 @@ int main(void)
 	fsm_init(&fsm12, fd1, fd2);//初始化r9w10的有限状态机
 	fsm_init(&fsm21, fd2, fd1);//初始化r10w9的有限状态机
 
-	//推动有限状态机的运行
+	//推动有限状态机的运行(轮询: 资源消耗较大, 但实现简单)
 	while(fsm12->state != STATE_T && fsm21->state != STATE_T)
 	{
 		fsm_drive(fsm12);//推动r9w10的有限状态机

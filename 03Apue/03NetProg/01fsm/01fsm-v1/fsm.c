@@ -66,8 +66,7 @@ int fsm_drive(fsm_t *f)
 				f->errmsg = "write()";//记录出错函数的函数名
 				f->state = STATE_E;//切换到E状态
 			}
-			else
-			{
+			else{
 				if(ret < f->count)//判断是否没有写完
 				{
 					f->pos += ret;//记录已经写入的字节数

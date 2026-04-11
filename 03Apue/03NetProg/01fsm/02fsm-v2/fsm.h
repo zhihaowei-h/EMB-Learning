@@ -32,7 +32,7 @@ typedef struct {
 int fsm_init(fsm_t **f, int rfd, int wfd); // 要修改指向状态机的一级指针的值(要为状态机开辟空间，也就是让指向状态机的一级指针指向该开辟的空间)，所以要传一个二级指针
 
 // 驱动状态机
-void fsm_drive(fsm_t *f);
+int fsm_drive(fsm_t *f);
 
 // 销毁状态机
-int fsm_destory(fsm_t *f);
+int fsm_destroy(fsm_t *f);
