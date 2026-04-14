@@ -1,0 +1,46 @@
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+
+#define BUFSIZE 10
+
+// 获取文件的权限
+static char *get_file_permission(mode_t st_mode, char *buf){
+    int mask[BUFSIZE - 1] = {S_IRUSR, S_IWUSR, S_IXUSR,
+                             S_IRGRP, S_IWGRP, S_IXGRP,
+                             S_IROTH, S_IWOTH, S_IXOTH}; // 存储权限的宏值
+    char permission[BUFSIZE] = "rwxrwxrwx"; // 满权限
+    int i = 0;//循环变量
+
+    for(i = 0; i < BUFSIZE - 1; i++){
+        // 如果当前文件没有该权限
+        if(!(st_mode & mask[i]))
+            permission[i] = '-'; // 由于没有该权限,把该位置的符号修改为'-'
+    }
+    strncpy(buf, permission, BUFSIZE); // 把局部变量的数据转存到形参指向的存储空间
+
+    return buf;
+}
+
+int main(int argc, char *argv[]){
+    struct stat fs; // 用来存储获取到的文件元信息
+    char buf[BUFSIZE] = {0}; // 用来存储文件权限的符号
+
+    // 如果 命令行参数的个数少于2个
+    if(argc < 2){
+        fprintf(stderr, "Usage : %s + filename\n", argv[0]); // 打印使用说明
+        return -1; // 由于命令行参数的个数少于2个,结束程序,并且返回-1
+    }
+
+    // 如果 获取文件的元信息 失败
+    if(stat(argv[1], &fs) == -1){
+        perror("stat()"); // 打印错误信息
+        return -2; // 由于获取文件的元信息失败,结束程序,并且返回-2
+    }
+
+    printf("%s\n", get_file_permission(fs.st_mode, buf)); // 获取文件的权限
+
+    return 0;
+}

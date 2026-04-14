@@ -37,8 +37,8 @@ int main(void){
 
         memset(buf, 0, BUFSIZE); // 清空脏数据
         strftime(buf, BUFSIZE, "%Y年%m月%d日 %H:%M:%S\n", time_st); //把格式化时间转换成格式化时间的字符串 // FIXME
-        fputs(buf, fp); // 把buf存储的字符串写入到fp指针指向的文件流中 // FIXME 
-        fflush(NULL); // 刷新缓冲区  // FIXME
+        fputs(buf, fp); // 把buf存储的字符串写入到fp指针指向的文件流中
+        fflush(NULL); // 刷新缓冲区
         sleep(1);
     }
 
