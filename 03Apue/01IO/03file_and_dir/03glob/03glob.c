@@ -11,7 +11,7 @@ int my_errfunc(const char *epath, int eerrno) {
 int main() {
     glob_t result;
       
-    int ret = glob("*.h", 0, my_errfunc, &result);  // 假如在一个权限为000的文件夹中执行该程序，就会报错转而去执行my_errfunc
+    int ret = glob("*.h", GLOB_ERR, my_errfunc, &result);  // 假如在一个权限为000的文件夹中执行该程序，就会报错转而去执行my_errfunc
       
     switch(ret) {
         case 0:

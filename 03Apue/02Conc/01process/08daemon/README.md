@@ -70,3 +70,7 @@ sudo ./mydaemon_app
 * 查看业务输出：`tail -f /tmp/out`，会看到时间在不断更新。
 * 尝试启动第二个实例：`sudo ./mydaemon_app`。
 * 查看报错日志：`cat /var/log/syslog | grep daemon`，你会看到 `syslog()` 发出的报错信息（如提示锁已被占用）。
+
+
+# 代码解释
+[为什么在将子进程变成守护进程前要杀死其父进程？](./04single_instance_mydaemon.c#L29)

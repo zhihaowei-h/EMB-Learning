@@ -8,16 +8,17 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "-a:b")) != -1) {
         switch (opt) {
             case 'a':
-                printf("选项 a, 参数: %s\n", optarg);
+                printf("命令选项 a, 参数: %s\n", optarg);
                 break;
             case 'b':
-                printf("选项 b\n");
+                printf("命令选项 b\n");
                 break;
             case 1:  // 非选项参数返回1
-                printf("非选项参数: %s\n", optarg);
+                printf("非命令选项参数: %s\n", optarg);
                 break;
             case '?':
-                printf("未知选项: %c\n", optopt);
+                if(optopt == 'a') printf("选项 -%c 需要一个参数\n", optopt);
+                else printf("未知命令选项: %c\n", optopt);
                 break;
         }
     }

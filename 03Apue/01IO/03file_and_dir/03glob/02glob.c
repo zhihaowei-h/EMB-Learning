@@ -7,10 +7,9 @@ int main() {
       
     int ret = glob("*.c", 0, NULL, &result);
   
-    // 不管配没匹配到.c文件，都接着尝试匹配.h文件
+    // 不管配没匹配到.c文件，都接着尝试匹配.h文件，追加到result中
     if(ret == 0 || ret == GLOB_NOMATCH) {
         ret = glob("*.h", GLOB_APPEND, NULL, &result);
-        // GLOB_APPEND 表示追加到已有结果
     }
       
     printf("找到 %zu 个文件：\n", result.gl_pathc);

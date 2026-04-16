@@ -2,8 +2,8 @@
 #include <glob.h>
   
 int main() {
-    glob_t result;
-    int ret;
+    glob_t result; // glob_t 结构体用来存储 glob 函数匹配到的路径信息
+    int ret = 0; 
       
     // 查找当前目录下所有 .c 文件
     ret = glob("*.c", 0, NULL, &result);
