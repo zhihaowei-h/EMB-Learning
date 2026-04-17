@@ -9,13 +9,13 @@ int main() {
     printf("原始文件描述符: %d\n", fd1);  // 通常是 3
       
     // 复制文件描述符
-    int fd2 = dup(fd1);
-    printf("复制后的文件描述符: %d\n", fd2);  // 最小的可用是 4
+    int fd2 = dup(fd1); // 将fd1复制到fd2(最小的可用是 4)
+    printf("复制后的文件描述符: %d\n", fd2);
       
     // 通过 fd1文件描述符 写入
     write(fd1, "Hello from fd1\n", 15);
       
-    // 通过 fd2文件描述符 写入（同一个文件表项）
+    // 通过 fd2文件描述符 写入(同一个文件表项)
     write(fd2, "Hello from fd2\n", 15);
       
     // 关闭一个不影响另一个
