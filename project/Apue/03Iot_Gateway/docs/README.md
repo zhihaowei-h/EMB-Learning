@@ -1,6 +1,7 @@
 # IoT Gateway System - 物联网网关系统
 
 ## 代码目录  
+``` Plaintext
 03Iot_Gateway  
 ├── firmware/              # 👈 专门存放下位机（STM32/ESP8266）代码  
 │   └── 19esp8266_udp/     # 这里放你的 Keil 工程文件  
@@ -13,6 +14,7 @@
 ├── scripts/               # 脚本  
 ├── Makefile               # 构建网关程序的 Makefile  
 └── README.md  
+```
 
 ## 项目简介
 
